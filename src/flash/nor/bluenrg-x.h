@@ -27,6 +27,7 @@
 #define FLASH_CMD_MASSERASE  0x22
 #define FLASH_CMD_WRITE      0x33
 #define FLASH_CMD_BURSTWRITE 0xCC
+#define FLASH_INT_CMDSTART   0x02
 #define FLASH_INT_CMDDONE    0x01
 
 #define FLASH_WORD_LEN       4

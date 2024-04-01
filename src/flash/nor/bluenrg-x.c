@@ -76,7 +76,18 @@ static const struct flash_ctrl_priv_data flash_priv_data_lps = {
 	.part_name = "BLUENRG-LPS",
 };
 
+struct bluenrgx_options {
+	uint8_t rdp;
+	uint8_t user;
+	uint16_t data;
+	uint32_t protection;
+};
+
 struct bluenrgx_flash_bank {
+    // rdp
+    struct bluenrgx_options option_bytes;
+	uint8_t default_rdp;
+
 	bool probed;
 	uint32_t die_id;
 	const struct flash_ctrl_priv_data *flash_ptr;
@@ -114,6 +125,77 @@ FLASH_BANK_COMMAND_HANDLER(bluenrgx_flash_bank_command)
 	return ERROR_OK;
 }
 
+// static int bluenrgx_read_options(struct flash_bank *bank)
+// {
+// 	struct bluenrgx_flash_bank *bluenrgx_info = bank->driver_priv;
+// 	struct target *target = bank->target;
+// 	uint32_t option_bytes;
+// 	int retval;
+
+// 	/* read user and read protection option bytes, user data option bytes */
+// 	retval = target_read_u32(target, STM32_FLASH_OBR_B0, &option_bytes);
+// 	if (retval != ERROR_OK)
+// 		return retval;
+
+// 	bluenrgx_info->option_bytes.rdp = (option_bytes & (1 << OPT_READOUT)) ? 0 : bluenrgx_info->default_rdp;
+// 	bluenrgx_info->option_bytes.user = (option_bytes >> bluenrgx_info->option_offset >> 2) & 0xff;
+// 	bluenrgx_info->option_bytes.data = (option_bytes >> bluenrgx_info->user_data_offset) & 0xffff;
+
+// 	/* read write protection option bytes */
+// 	retval = target_read_u32(target, STM32_FLASH_WRPR_B0, &bluenrgx_info->option_bytes.protection);
+// 	if (retval != ERROR_OK)
+// 		return retval;
+
+// 	return ERROR_OK;
+// }
+
+// static int bluenrgx_erase_options(struct flash_bank *bank)
+// {
+// 	struct bluenrgx_flash_bank *bluenrgx_info = bank->driver_priv;
+// 	struct target *target = bank->target;
+
+// 	/* read current options */
+// 	bluenrgx_read_options(bank);
+
+// 	/* unlock flash registers */
+// 	int retval = target_write_u32(target, STM32_FLASH_KEYR_B0, KEY1);
+// 	if (retval != ERROR_OK)
+// 		return retval;
+// 	retval = target_write_u32(target, STM32_FLASH_KEYR_B0, KEY2);
+// 	if (retval != ERROR_OK)
+// 		goto flash_lock;
+
+// 	/* unlock option flash registers */
+// 	retval = target_write_u32(target, STM32_FLASH_OPTKEYR_B0, KEY1);
+// 	if (retval != ERROR_OK)
+// 		goto flash_lock;
+// 	retval = target_write_u32(target, STM32_FLASH_OPTKEYR_B0, KEY2);
+// 	if (retval != ERROR_OK)
+// 		goto flash_lock;
+
+// 	/* erase option bytes */
+// 	retval = target_write_u32(target, STM32_FLASH_CR_B0, FLASH_OPTER | FLASH_OPTWRE);
+// 	if (retval != ERROR_OK)
+// 		goto flash_lock;
+// 	retval = target_write_u32(target, STM32_FLASH_CR_B0, FLASH_OPTER | FLASH_STRT | FLASH_OPTWRE);
+// 	if (retval != ERROR_OK)
+// 		goto flash_lock;
+
+// 	retval = bluenrgx_wait_status_busy(bank, FLASH_ERASE_TIMEOUT);
+// 	if (retval != ERROR_OK)
+// 		goto flash_lock;
+
+// 	/* clear read protection option byte
+// 	 * this will also force a device unlock if set */
+// 	bluenrgx_info->option_bytes.rdp = bluenrgx_info->default_rdp;
+
+// 	return ERROR_OK;
+
+// flash_lock:
+// 	target_write_u32(target, STM32_FLASH_CR_B0, FLASH_LOCK);
+// 	return retval;
+// }
+
 static inline uint32_t bluenrgx_get_flash_reg(struct flash_bank *bank, uint32_t reg_offset)
 {
 	struct bluenrgx_flash_bank *bluenrgx_info = bank->driver_priv;
@@ -128,6 +210,141 @@ static inline int bluenrgx_read_flash_reg(struct flash_bank *bank, uint32_t reg_
 static inline int bluenrgx_write_flash_reg(struct flash_bank *bank, uint32_t reg_offset, uint32_t value)
 {
 	return target_write_u32(bank->target, bluenrgx_get_flash_reg(bank, reg_offset), value);
+}
+
+COMMAND_HANDLER(bluenrgx_handle_lock_command)
+{
+	// struct target *target = NULL;
+	// struct bluenrgx_flash_bank *bluenrgx_info = NULL;
+
+	// if (CMD_ARGC < 1)
+	// 	return ERROR_COMMAND_SYNTAX_ERROR;
+
+	// struct flash_bank *bank;
+	// int retval = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
+	// if (retval != ERROR_OK)
+	// 	return retval;
+
+	// bluenrgx_info = bank->driver_priv;
+
+	// target = bank->target;
+
+	// if (target->state != TARGET_HALTED) {
+	// 	LOG_ERROR("Target not halted");
+	// 	return ERROR_TARGET_NOT_HALTED;
+	// }
+    struct flash_bank *bank;
+	int retval = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
+	if (retval != ERROR_OK)
+		return retval;
+
+	struct bluenrgx_flash_bank *bluenrgx_info = bank->driver_priv;
+	struct target *target = bank->target;
+
+	/* check preconditions */
+	if (!bluenrgx_info->probed)
+		return ERROR_FLASH_BANK_NOT_PROBED;
+
+	if (bank->target->state != TARGET_HALTED) {
+		LOG_ERROR("Target not halted");
+		return ERROR_TARGET_NOT_HALTED;
+	}
+	/* Disable blue module */
+	if (target_write_u32(target, 0x200000c0, 0) != ERROR_OK) {
+		LOG_ERROR("Blue disable failed");
+		return ERROR_FAIL;
+	}
+    
+    // ref https://www.st.com/resource/en/reference_manual/rm0479-the-bluenrglp-arm-cortexm0based-stmicroelectronics.pdf
+    if (bluenrgx_write_flash_reg(bank, FLASH_REG_DATA0, 0xAAAAAAAA) != ERROR_OK) {
+        LOG_ERROR("Register DATA0 write failed");
+        return ERROR_FAIL;
+    }
+    
+    if (bluenrgx_write_flash_reg(bank, FLASH_REG_DATA1, 0xAAAAAAAA) != ERROR_OK) {
+        LOG_ERROR("Register DATA1 write failed");
+        return ERROR_FAIL;
+    }
+
+    if (bluenrgx_write_flash_reg(bank, FLASH_REG_DATA2, 0xC7EF584D) != ERROR_OK) {
+        LOG_ERROR("Register DATA2 write failed");
+        return ERROR_FAIL;
+    }
+
+    if (bluenrgx_write_flash_reg(bank, FLASH_REG_DATA3, 0xB3A21096) != ERROR_OK) {
+        LOG_ERROR("Register DATA3 write failed");
+        return ERROR_FAIL;
+    }
+
+    if (bluenrgx_write_flash_reg(bank, FLASH_REG_COMMAND, 0xFF) != ERROR_OK) {
+        LOG_ERROR("Register write failed");
+        return ERROR_FAIL;
+    }
+
+    uint32_t value = 0;
+    uint32_t timeout = 100;
+    // for (;;) {
+    //     if (bluenrgx_read_flash_reg(bank, FLASH_REG_IRQRAW, &value)) {
+    //         LOG_ERROR("Register write failed");
+    //         return ERROR_FAIL;
+    //     }
+    //     LOG_ERROR("value: 0x%" PRIx32 "", value);
+    //     if (value & FLASH_INT_CMDSTART)
+    //         break;
+	// 	if (timeout-- <= 0) {
+    //         LOG_ERROR("Lock command start failed (timeout)");
+    //         return ERROR_FAIL;
+	// 	}
+	// 	alive_sleep(1);
+	// }
+
+    // if (bluenrgx_write_flash_reg(bank, FLASH_REG_IRQRAW, 0x02) != ERROR_OK) {
+    //     LOG_ERROR("Failed");
+    //     return ERROR_FAIL;
+    // }
+
+    value = 0;
+    timeout = 100;
+    for (;;) {
+        if (bluenrgx_read_flash_reg(bank, FLASH_REG_IRQRAW, &value)) {
+            LOG_ERROR("Register write failed");
+            return ERROR_FAIL;
+        }
+        LOG_ERROR("value: 0x%" PRIx32 "", value);
+        if (value & FLASH_INT_CMDDONE)
+            break;
+		if (timeout-- <= 0) {
+            LOG_ERROR("Lock command done failed (timeout)");
+            return ERROR_FAIL;
+        }
+		alive_sleep(1);
+	}
+
+    if (bluenrgx_write_flash_reg(bank, FLASH_REG_IRQRAW, 0x01) != ERROR_OK) {
+        LOG_ERROR("Failed");
+        return ERROR_FAIL;
+    }
+
+	// retval = stm32x_check_operation_supported(bank);
+	// if (retval != ERROR_OK)
+	// 	return retval;
+
+	// if (stm32x_erase_options(bank) != ERROR_OK) {
+	// 	command_print(CMD, "stm32x failed to erase options");
+	// 	return ERROR_OK;
+	// }
+
+	// /* set readout protection */
+	// bluenrgx_info->option_bytes.rdp = 0;
+
+	// if (stm32x_write_options(bank) != ERROR_OK) {
+	// 	command_print(CMD, "stm32x failed to lock device");
+	// 	return ERROR_OK;
+	// }
+
+	command_print(CMD, "bluenrgx locked");
+
+	return ERROR_OK;
 }
 
 static int bluenrgx_erase(struct flash_bank *bank, unsigned int first,
@@ -462,8 +679,68 @@ static int bluenrgx_get_info(struct flash_bank *bank, struct command_invocation 
 	return ERROR_OK;
 }
 
+static const struct command_registration bluenrgx_exec_command_handlers[] = {
+	{
+		.name = "lock",
+		.handler = bluenrgx_handle_lock_command,
+		.mode = COMMAND_EXEC,
+		.usage = "bank_id",
+		.help = "Lock entire flash device.",
+	},
+	// {
+	// 	.name = "unlock",
+	// 	.handler = stm32x_handle_unlock_command,
+	// 	.mode = COMMAND_EXEC,
+	// 	.usage = "bank_id",
+	// 	.help = "Unlock entire protected flash device.",
+	// },
+	// {
+	// 	.name = "mass_erase",
+	// 	.handler = stm32x_handle_mass_erase_command,
+	// 	.mode = COMMAND_EXEC,
+	// 	.usage = "bank_id",
+	// 	.help = "Erase entire flash device.",
+	// },
+	// {
+	// 	.name = "options_read",
+	// 	.handler = stm32x_handle_options_read_command,
+	// 	.mode = COMMAND_EXEC,
+	// 	.usage = "bank_id",
+	// 	.help = "Read and display device option bytes.",
+	// },
+	// {
+	// 	.name = "options_write",
+	// 	.handler = stm32x_handle_options_write_command,
+	// 	.mode = COMMAND_EXEC,
+	// 	.usage = "bank_id ('SWWDG'|'HWWDG') "
+	// 		"('RSTSTNDBY'|'NORSTSTNDBY') "
+	// 		"('RSTSTOP'|'NORSTSTOP') ('USEROPT' user_data)",
+	// 	.help = "Replace bits in device option bytes.",
+	// },
+	// {
+	// 	.name = "options_load",
+	// 	.handler = stm32x_handle_options_load_command,
+	// 	.mode = COMMAND_EXEC,
+	// 	.usage = "bank_id",
+	// 	.help = "Force re-load of device option bytes.",
+	// },
+	COMMAND_REGISTRATION_DONE
+};
+
+static const struct command_registration bluenrgx_command_handlers[] = {
+	{
+		.name = "bluenrg-x",
+		.mode = COMMAND_ANY,
+		.help = "bluenrg-x flash command group",
+		.usage = "",
+		.chain = bluenrgx_exec_command_handlers,
+	},
+	COMMAND_REGISTRATION_DONE
+};
+
 const struct flash_driver bluenrgx_flash = {
 	.name = "bluenrg-x",
+    .commands = bluenrgx_command_handlers,
 	.flash_bank_command = bluenrgx_flash_bank_command,
 	.erase = bluenrgx_erase,
 	.protect = NULL,
