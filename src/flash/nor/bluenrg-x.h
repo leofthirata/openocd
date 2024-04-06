@@ -30,6 +30,13 @@
 #define FLASH_INT_CMDSTART   0x02
 #define FLASH_INT_CMDDONE    0x01
 
+#define FLASH_FLAG_CMDDONE             0x01     /*!< FLASH command done flag    */
+#define FLASH_FLAG_CMDSTART            0x02    /*!< FLASH command started flag */
+#define FLASH_FLAG_CMDERR              0x04      /*!< FLASH command error flag   */
+#define FLASH_FLAG_ILLCMD              0x08      /*!< FLASH illegal command flag */
+
 #define FLASH_WORD_LEN       4
+
+#define OTP_AREA_BASE          (0x10001800U)
 
 #endif /* OPENOCD_FLASH_NOR_BLUENRGX_H */
