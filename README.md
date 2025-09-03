@@ -10,9 +10,13 @@ sudo make install
 
 # Usage
 ## OTP Write
+```
 openocd -f interface/stlink.cfg -f target/bluenrg-x.cfg -c "hla_serial <stlink-sn>" -c "init" -c "halt" -c "bluenrg-x otp 0 <otp-address> <value>" -c "reset halt" -c "exit"
+```
 ### Example
+```
 openocd -f interface/stlink.cfg -f target/bluenrg-x.cfg -c "hla_serial 34001600050000304131574E" -c "init" -c "halt" -c "bluenrg-x otp 0 0x10001b00 0x1234" -c "reset halt" -c "exit"
+```
 
 #### Output
 ```
@@ -48,9 +52,13 @@ Warn : Flash driver of bluenrg-1.flash does not support free_driver_priv()
 ```
 
 ## OTP Read
+```
 openocd -f interface/stlink-v2.cfg -f target/bluenrg-x.cfg -c "hla_serial <stlink-sn>" -c "init" -c "$target_name mdw <otp-address> <size>" -c "exit"
+```
 ### Example
+```
 openocd -f interface/stlink-v2.cfg -f target/bluenrg-x.cfg -c "hla_serial 34001600050000304131574E" -c "init" -c "$target_name mdw 0x10001800 200" -c "exit"
+```
 
 #### Output
 ```
