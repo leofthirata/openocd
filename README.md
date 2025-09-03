@@ -1,9 +1,12 @@
 # Installation
+Inside the openocd folder, run
+```
 sudo apt install make libtool-bin pkg-config libusb-1.0.0-dev
 ./bootstrap
 ./configure --enable-stlink
 make
 sudo make install
+```
 
 # Usage
 ## OTP Write
